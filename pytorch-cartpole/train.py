@@ -5,10 +5,11 @@ import matplotlib.pyplot as plt
 from models import DQNAgent
 
 # Hyperparameters
-EPISODES = 4000
-EARLY_TERMINATION_PENALTY = -10
-MIN_REWARD_THRESHOLD = 500
-SOLVED_THRESHOLD = 500
+EPISODES = 5000
+EARLY_TERMINATION_PENALTY = -50
+BONUS_FOR_STAYING_ALIVE = 0.9
+MIN_REWARD_THRESHOLD = 300
+SOLVED_THRESHOLD = 700
 PROGRESS_PRINT_INTERVAL = 100
 RUNNING_AVERAGE_WINDOW = 100
 TEST_EPISODES = 5
@@ -43,6 +44,8 @@ def train_cartpole():
             # Custom reward shaping for better learning
             if done and total_reward < MIN_REWARD_THRESHOLD:
                 reward = EARLY_TERMINATION_PENALTY
+            else:
+                reward = reward + BONUS_FOR_STAYING_ALIVE
             
             agent.remember(state, action, reward, next_state, done or truncated)
             state = next_state
@@ -117,10 +120,10 @@ if __name__ == "__main__":
     
     print("\nTesting trained agent...")
     test_scores = test_agent(agent, episodes=DEFAULT_TEST_EPISODES)
-    
-    print("\nPlotting training progress...")
-    plot_scores(training_scores)
-    
+
     # Save the trained model
     torch.save(agent.q_network.state_dict(), 'cartpole_dqn.pth')
     print("Model saved as 'cartpole_dqn.pth'")
+
+    print("\nPlotting training progress...")
+    plot_scores(training_scores)

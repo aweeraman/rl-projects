@@ -51,9 +51,9 @@ class DQNAgent:
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
         
         # Replay buffer
-        self.memory = ReplayBuffer(10000)
-        self.batch_size = 64
-        self.update_target_freq = 100
+        self.memory = ReplayBuffer(50000)
+        self.batch_size = 128
+        self.update_target_freq = 500
         self.step_count = 0
     
     def act(self, state, training=True):
@@ -65,7 +65,11 @@ class DQNAgent:
         return q_values.argmax().item()
     
     def remember(self, state, action, reward, next_state, done):
-        self.memory.push(state, action, reward, next_state, done)
+        if reward > 200:
+            for _ in range(5):
+                self.memory.push(state, action, reward, next_state, done)
+        else:
+            self.memory.push(state, action, reward, next_state, done)
     
     def replay(self):
         if len(self.memory) < self.batch_size:
@@ -80,13 +84,15 @@ class DQNAgent:
         dones = torch.BoolTensor(dones).to(self.device)
         
         current_q = self.q_network(states).gather(1, actions.unsqueeze(1))
-        next_q = self.target_network(next_states).max(1)[0].detach()
+        next_actions = self.q_network(next_states).argmax(1)
+        next_q = self.target_network(next_states).gather(1, next_actions.unsqueeze(1)).squeeze()
         target_q = rewards + (self.gamma * next_q * ~dones)
         
         loss = F.mse_loss(current_q.squeeze(), target_q)
         
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), 1.0)
         self.optimizer.step()
         
         self.step_count += 1
