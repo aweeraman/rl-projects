@@ -90,14 +90,15 @@ def select_action(model, state, epsilon, action_dim):
             q_values = model(state)
             return q_values.argmax().item()
 
-def train_step(step_count, model, target_model, optimizer, replay_buffer, writer):
+def train_step(global_step, model, target_model, optimizer, replay_buffer, writer):
     if (len(replay_buffer) < BATCH_SIZE):
         return
     
     states, actions, rewards, next_states, dones = replay_buffer.sample(BATCH_SIZE)
 
     # Q(s, a) from the current model
-    current_q = model(states).gather(1, actions)
+    q_values = model(states)
+    current_q = q_values.gather(1, actions)
 
     # Q target using target network (no gradients)
     with torch.no_grad():
@@ -106,8 +107,12 @@ def train_step(step_count, model, target_model, optimizer, replay_buffer, writer
     
     loss = nn.MSELoss()(current_q, target_q)
 
-    if step_count % TRAIN_INTERVAL == 0:
-        writer.add_scalar("Loss", loss.item(), step_count)
+    if global_step % TRAIN_INTERVAL == 0:
+        writer.add_scalar("Train/Loss", loss.item(), global_step)
+
+        # Compute and log Q_max (mean max Q-value across the batch)
+        q_max = q_values.max(dim=1)[0].mean().item()
+        writer.add_scalar("Train/Q_max", q_max, global_step)
 
     optimizer.zero_grad()
     loss.backward()
@@ -168,8 +173,9 @@ def train():
             if step_count % TRAIN_INTERVAL == 0:
                 train_step(global_step_count, policy_net, target_net, optimizer, replay_buffer, writer)
 
-        writer.add_scalar("Reward/Total", total_reward, episode)
-        writer.add_scalar("Epsilon", epsilon, episode)
+        writer.add_scalar("Train/Reward", total_reward, episode)
+        writer.add_scalar("Train/Epsilon", epsilon, episode)
+        writer.add_scalar("Train/Steps", step_count, episode)
 
         rewards.append(total_reward)
 
