@@ -29,7 +29,7 @@ ACTION_DUPLICATION_FACTOR = 5
 MIN_REWARD_THRESHOLD = 300
 BONUS_FOR_STAYING_ALIVE = .9
 PREFER_ACTIONS_WITH_REWARDS_OVER = 200
-SOLVED_STEPS = 500
+MAX_REWARD = 500
 
 # Validation
 VALIDATION_EPISODES = 3
@@ -138,6 +138,7 @@ def train():
 
     rewards = []
     best_reward = -float('inf')
+    global_step_count = 0
 
     for episode in range(1, EPISODES + 1):
         
@@ -148,6 +149,7 @@ def train():
         done = False
         while not done:
             step_count += 1
+            global_step_count += 1
             action = select_action(policy_net, state, epsilon, action_dim)
             next_state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
@@ -164,7 +166,7 @@ def train():
             total_reward += reward # type: ignore
 
             if step_count % TRAIN_INTERVAL == 0:
-                train_step(step_count, policy_net, target_net, optimizer, replay_buffer, writer)
+                train_step(global_step_count, policy_net, target_net, optimizer, replay_buffer, writer)
 
         writer.add_scalar("Reward/Total", total_reward, episode)
         writer.add_scalar("Epsilon", epsilon, episode)
@@ -197,7 +199,7 @@ def train():
                 model_saved = True
 
             print(f"Episode: {episode:>4}, Average Reward: {avg_reward:7.3f}, Epsilon: {epsilon:6.3f} {'[ Saved ]':<6}" if model_saved else
-                f"Episode: {episode:>4}, Average Reward: {avg_reward:7.3f}, Epsilon: {epsilon:6.3f} {'':<6}")
+                  f"Episode: {episode:>4}, Average Reward: {avg_reward:7.3f}, Epsilon: {epsilon:6.3f} {'':<6}")
 
     writer.flush()
     writer.close()
@@ -206,45 +208,34 @@ def train():
 def validate(model, env_name, episodes=10, render=False, seed=None):
     env = gym.make(env_name, render_mode="human" if render else None)
     
-    if seed is None:
-        seed = random.randint(0, 10000)
-
-    env.reset(seed=seed)
-    env.action_space.seed(seed)
-    env.observation_space.seed(seed)
-
     model.eval()
 
     total_rewards = []
-    total_steps = []
 
     for episode in range(1, episodes + 1):
-        state, _ = env.reset(seed=seed) # type: ignore
+        episode_seed = seed + episode if seed is not None else random.randint(0, 10_000)
+        state, _ = env.reset(seed=episode_seed) # type: ignore
         done = False
         total_reward = 0
-        steps = 0
 
         while not done:
-            steps += 1
             if render:
                 env.render()
             with torch.no_grad():
                 state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
                 action = model(state_tensor).argmax().item()
             next_state, reward, terminated, truncated, _ = env.step(action)
+            total_reward += reward # type: ignore
             done = terminated or truncated
-            total_reward += reward #type: ignore
             state = next_state
-        
+
         total_rewards.append(total_reward)
-        total_steps.append(steps)
-        print(f"Validation Episode {episode}: Reward = {total_reward}")
+        print(f"Validation Episode {episode}: Reward = {total_reward}, Seed = {episode_seed}")
 
     avg_reward = np.mean(total_rewards)
-    avg_steps = np.mean(total_steps)
     print(f"Validation Average Reward over {episodes} episodes: {avg_reward:.3f}")
 
-    if (avg_steps == SOLVED_STEPS):
+    if (avg_reward == MAX_REWARD):
         print(f"{ENV} is solved!");
 
     env.close()
