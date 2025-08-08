@@ -9,11 +9,12 @@ import argparse
 import os
 
 # Hyperparameters
+SEED = 42
 EPISODES = 1000
 INTERVAL = 100
 GAMMA = 0.99
 LR = 1e-3
-TRAIN_INTERVAL = 1
+TRAIN_INTERVAL = 5
 BATCH_SIZE = 128
 MEM_SIZE = 10000
 TARGET_UPDATE = 10
@@ -33,6 +34,14 @@ VALIDATION_EPISODES = 3
 # CONFIG
 ENV = "CartPole-v1"
 MODEL_PATH = "dqn_cartpole.pth"
+
+# Reproducibility
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 # Q-Network
 class DQN(nn.Module):
@@ -108,6 +117,9 @@ def train():
     print(f"Training DQN on {ENV}")
     
     env = gym.make(ENV)
+    env.reset(seed=SEED)
+    env.action_space.seed(SEED)
+    env.observation_space.seed(SEED)
     state_dim = env.observation_space.shape[0] # type: ignore
     action_dim = env.action_space.n # type: ignore
 
@@ -184,6 +196,7 @@ def train():
 
 def validate(model, env_name, episodes=10, render=False):
     env = gym.make(env_name, render_mode="human" if render else None)
+    env.reset(seed=SEED)
     model.eval()
 
     total_rewards = []
