@@ -247,7 +247,10 @@ def load_and_validate_model(model_path, render=False, seed=None):
             print(f"Model file {model_path} does not exist. Please train the model first.")
             exit(1)
 
-    model = DQN(4, 2).to(device)
+    env = gym.make(ENV)
+    state_dim = env.observation_space.shape[0] # type: ignore
+    action_dim = env.action_space.n # type: ignore
+    model = DQN(state_dim, action_dim).to(device)
     checkpoint = torch.load(model_path)
     model.load_state_dict(checkpoint['model_state_dict'])
 
