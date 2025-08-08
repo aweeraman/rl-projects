@@ -13,7 +13,7 @@ EPISODES = 1000
 INTERVAL = 100
 GAMMA = 0.99
 LR = 1e-3
-TRAIN_INTERVAL = 10
+TRAIN_INTERVAL = 1
 BATCH_SIZE = 128
 MEM_SIZE = 10000
 TARGET_UPDATE = 10
@@ -141,7 +141,7 @@ def train():
             if not done:
                 reward += BONUS_FOR_STAYING_ALIVE # type: ignore
             if done and total_reward < MIN_REWARD_THRESHOLD:
-                reward -= EARLY_TERMINATION_PENALTY #type: ignore
+                reward += EARLY_TERMINATION_PENALTY #type: ignore
 
             replay_buffer.push(state, action, reward, next_state, done)
 
