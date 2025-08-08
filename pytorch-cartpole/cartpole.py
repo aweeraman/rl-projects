@@ -9,7 +9,7 @@ import argparse
 import os
 
 # Hyperparameters
-SEED = 42
+SEED = 24
 EPISODES = 1000
 INTERVAL = 100
 GAMMA = 0.99
@@ -24,6 +24,7 @@ EPS_DECAY = 0.995
 
 # Reward shaping
 EARLY_TERMINATION_PENALTY = -50
+ACTION_DUPLICATION_FACTOR = 5
 MIN_REWARD_THRESHOLD = 300
 BONUS_FOR_STAYING_ALIVE = .9
 PREFER_ACTIONS_WITH_REWARDS_OVER = 200
@@ -35,13 +36,7 @@ VALIDATION_EPISODES = 3
 ENV = "CartPole-v1"
 MODEL_PATH = "dqn_cartpole.pth"
 
-# Reproducibility
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.cuda.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Q-Network
 class DQN(nn.Module):
@@ -65,7 +60,7 @@ class ReplayBuffer:
     def push(self, state, action, reward, next_state, done):
         # Reward shaping to prefer actions with high rewards
         if reward > PREFER_ACTIONS_WITH_REWARDS_OVER:
-            for _ in range(5):
+            for _ in range(ACTION_DUPLICATION_FACTOR):
                 self.buffer.append((state, action, reward, next_state, done))
         else:
             self.buffer.append((state, action, reward, next_state, done))
@@ -120,6 +115,7 @@ def train():
     env.reset(seed=SEED)
     env.action_space.seed(SEED)
     env.observation_space.seed(SEED)
+
     state_dim = env.observation_space.shape[0] # type: ignore
     action_dim = env.action_space.n # type: ignore
 
@@ -194,15 +190,24 @@ def train():
 
     env.close()
 
-def validate(model, env_name, episodes=10, render=False):
+def validate(model, env_name, episodes=10, render=False, seed=None):
     env = gym.make(env_name, render_mode="human" if render else None)
-    env.reset(seed=SEED)
+    
+    if seed is None:
+        seed = random.randint(0, 10000)
+
+    print(f"Using seedx {seed}")
+    env.reset(seed=seed)
+    env.action_space.seed(seed)
+    env.observation_space.seed(seed)
+
     model.eval()
 
     total_rewards = []
 
     for episode in range(1, episodes + 1):
-        state, _ = env.reset() # type: ignore
+        print(f"Using seed {seed}")
+        state, _ = env.reset(seed=seed) # type: ignore
         done = False
         total_reward = 0
 
@@ -224,7 +229,7 @@ def validate(model, env_name, episodes=10, render=False):
     print(f"Validation Average Reward over {episodes} episodes: {avg_reward:.3f}")
     env.close()
 
-def load_and_validate_model(model_path,render=False):
+def load_and_validate_model(model_path, render=False, seed=None):
     print(f"Validating DQN on {ENV}")
     
     if not os.path.exists(model_path):
@@ -235,11 +240,9 @@ def load_and_validate_model(model_path,render=False):
     checkpoint = torch.load(model_path)
     model.load_state_dict(checkpoint['model_state_dict'])
 
-    validate(model, ENV, episodes=VALIDATION_EPISODES, render=render)
+    validate(model, ENV, episodes=VALIDATION_EPISODES, render=render, seed=seed)
 
 if __name__ == "__main__":
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--validate', action='store_true', help='Validate the trained model')
@@ -247,11 +250,20 @@ if __name__ == "__main__":
 
     try:
         if (args.validate):
-            load_and_validate_model(MODEL_PATH, render=True)
+            load_and_validate_model(MODEL_PATH, render=True, seed=None)
 
         else:
+
+            # Reproducibility
+            random.seed(SEED)
+            np.random.seed(SEED)
+            torch.manual_seed(SEED)
+            torch.cuda.manual_seed(SEED)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
             train()
-            load_and_validate_model(MODEL_PATH, render=False)
+            load_and_validate_model(MODEL_PATH, render=False, seed=SEED)
     except KeyboardInterrupt:
         print(f"Training/validation interrupted by user. Exiting...")
         exit(0)
