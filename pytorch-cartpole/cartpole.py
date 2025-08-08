@@ -5,6 +5,7 @@ from collections import deque
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 import argparse
 import os
 
@@ -28,6 +29,7 @@ ACTION_DUPLICATION_FACTOR = 5
 MIN_REWARD_THRESHOLD = 300
 BONUS_FOR_STAYING_ALIVE = .9
 PREFER_ACTIONS_WITH_REWARDS_OVER = 200
+SOLVED_STEPS = 500
 
 # Validation
 VALIDATION_EPISODES = 3
@@ -88,7 +90,7 @@ def select_action(model, state, epsilon, action_dim):
             q_values = model(state)
             return q_values.argmax().item()
 
-def train_step(model, target_model, optimizer, replay_buffer):
+def train_step(step_count, model, target_model, optimizer, replay_buffer, writer):
     if (len(replay_buffer) < BATCH_SIZE):
         return
     
@@ -104,12 +106,15 @@ def train_step(model, target_model, optimizer, replay_buffer):
     
     loss = nn.MSELoss()(current_q, target_q)
 
+    if step_count % TRAIN_INTERVAL == 0:
+        writer.add_scalar("Loss", loss.item(), step_count)
+
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
 def train():
-    print(f"Training DQN on {ENV}")
+    print(f"----- Training DQN on {ENV} -----")
     
     env = gym.make(ENV)
     env.reset(seed=SEED)
@@ -118,6 +123,8 @@ def train():
 
     state_dim = env.observation_space.shape[0] # type: ignore
     action_dim = env.action_space.n # type: ignore
+
+    writer = SummaryWriter(log_dir="runs/dqn_cartpole")
 
     policy_net = DQN(state_dim, action_dim).to(device)
     target_net = DQN(state_dim, action_dim).to(device)
@@ -157,7 +164,10 @@ def train():
             total_reward += reward # type: ignore
 
             if step_count % TRAIN_INTERVAL == 0:
-                train_step(policy_net, target_net, optimizer, replay_buffer)
+                train_step(step_count, policy_net, target_net, optimizer, replay_buffer, writer)
+
+        writer.add_scalar("Reward/Total", total_reward, episode)
+        writer.add_scalar("Epsilon", epsilon, episode)
 
         rewards.append(total_reward)
 
@@ -186,8 +196,11 @@ def train():
 
                 model_saved = True
 
-            print(f"Episode: {episode}, Average Reward: {avg_reward:.3f}, Epsilon: {epsilon:.3f}, {'Saved' if model_saved else ''}")
+            print(f"Episode: {episode:>4}, Average Reward: {avg_reward:7.3f}, Epsilon: {epsilon:6.3f} {'[ Saved ]':<6}" if model_saved else
+                f"Episode: {episode:>4}, Average Reward: {avg_reward:7.3f}, Epsilon: {epsilon:6.3f} {'':<6}")
 
+    writer.flush()
+    writer.close()
     env.close()
 
 def validate(model, env_name, episodes=10, render=False, seed=None):
@@ -196,7 +209,6 @@ def validate(model, env_name, episodes=10, render=False, seed=None):
     if seed is None:
         seed = random.randint(0, 10000)
 
-    print(f"Using seedx {seed}")
     env.reset(seed=seed)
     env.action_space.seed(seed)
     env.observation_space.seed(seed)
@@ -204,14 +216,16 @@ def validate(model, env_name, episodes=10, render=False, seed=None):
     model.eval()
 
     total_rewards = []
+    total_steps = []
 
     for episode in range(1, episodes + 1):
-        print(f"Using seed {seed}")
         state, _ = env.reset(seed=seed) # type: ignore
         done = False
         total_reward = 0
+        steps = 0
 
         while not done:
+            steps += 1
             if render:
                 env.render()
             with torch.no_grad():
@@ -223,14 +237,20 @@ def validate(model, env_name, episodes=10, render=False, seed=None):
             state = next_state
         
         total_rewards.append(total_reward)
+        total_steps.append(steps)
         print(f"Validation Episode {episode}: Reward = {total_reward}")
 
     avg_reward = np.mean(total_rewards)
+    avg_steps = np.mean(total_steps)
     print(f"Validation Average Reward over {episodes} episodes: {avg_reward:.3f}")
+
+    if (avg_steps == SOLVED_STEPS):
+        print(f"{ENV} is solved!");
+
     env.close()
 
 def load_and_validate_model(model_path, render=False, seed=None):
-    print(f"Validating DQN on {ENV}")
+    print(f"----- Validating DQN on {ENV} -----")
     
     if not os.path.exists(model_path):
             print(f"Model file {model_path} does not exist. Please train the model first.")
@@ -245,11 +265,11 @@ def load_and_validate_model(model_path, render=False, seed=None):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--validate', action='store_true', help='Validate the trained model')
+    parser.add_argument('--test', action='store_true', help='Test the trained model')
     args = parser.parse_args()
 
     try:
-        if (args.validate):
+        if (args.test):
             load_and_validate_model(MODEL_PATH, render=True, seed=None)
 
         else:
