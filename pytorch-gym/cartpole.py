@@ -176,6 +176,7 @@ def train():
         writer.add_scalar("Train/Reward", total_reward, episode)
         writer.add_scalar("Train/Epsilon", epsilon, episode)
         writer.add_scalar("Train/Steps", step_count, episode)
+        writer.add_scalar("Train/Replay Buffer", len(replay_buffer), episode)
 
         rewards.append(total_reward)
 
